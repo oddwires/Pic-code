@@ -6,6 +6,7 @@
   * Target CPU = PIC 16F1509
   * 3v/5v SPI interface
   * Internal 170 volt SMPU
+  * Neat maths routine for 16 bit x 8  bit divide
 
 ![Nixies #1](Images/IMG_0848.jpg)
 
