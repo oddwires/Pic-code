@@ -2,6 +2,8 @@
     list                p=16F1509, c=150            ; List directive to define processor, 150 column width
     #include            <p16F1509.inc>              ; Processor specific variable definitions
     errorlevel  -302
+    
+    #define             SPI                         ; Switch between Counter and SPI
 
 ; CONFIG1
 ; __config 0x1E4
@@ -18,9 +20,9 @@ SCK             equ         RB6                     ; SPI Clock    => Pin 11
 SS1             equ         RC6                     ; SPI Select   => Pin  8
 
 ; Port A connection...
-Anode_0         equ         RA0                     ; Pin 19
-Anode_1         equ         RA1                     ; Pin 18
-Anode_2         equ         RA2                     ; Pin 17
+Anode_0         equ         RA2                     ; Pin 17
+Anode_1         equ         RA0                     ; Pin 19
+Anode_2         equ         RA1                     ; Pin 18
 Cathode_4       equ         RA4                     ; Pin  3
 Cathode_5       equ         RA5                     ; Pin  2
 
@@ -38,10 +40,13 @@ Cathode_3       equ         RC5                     ; Pin  5
 
 ; Data Memory allocation...
     CBLOCK h'20'
-                COUNTER_lo                           ; 16 bit number (0->999) to be displayed on Nixies
-                COUNTER_hi
+                Counter_lo                           ; 16 bit number (0->999) to be displayed on Nixies
+                Counter_hi
                 COUNT1
                 COUNT2
+; Variables associated with the SPI communications...
+                Data_lo
+                Data_hi
 ; Variables associated with the Div16x8 function...
                 Dividend_lo                         ; 16 bit
                 Dividend_hi
@@ -72,7 +77,72 @@ Cathode_3       equ         RC5                     ; Pin  5
                 nop
                 nop
                 nop
-                goto        Interrupt               ; Interrupt vector at 0x04
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+; Interrupt Service Routine.
+; Can be triggered by...
+;   1) Timer 0 Overflowing              (Fosc/4 counter)
+;   2) SPI data recepton                
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+TestSPI:        
+                banksel     PIR1
+                btfss       PIR1,SSP1IF             ; SPI interrupt ?
+                goto        TestTMR0                ; No  : Skip
+                movfw       Data_lo                 ; Yes : Shift previous byte
+                movwf       Data_hi
+                movwf       Counter_hi              ; Copy to counter
+                banksel     SSP1BUF
+                movfw       SSP1BUF                 ; Get current byte
+                banksel     0
+                movwf       Data_lo
+                movwf       Counter_lo              ; Copy to counter
+
+                banksel     PIR1
+                bcf         PIR1,SSP1IF             ; Clear Timer 0 interrupt flag                
+TestTMR0:       
+                banksel     INTCON
+                btfss       INTCON,TMR0IF           ; Timer 0 interrupt ?
+                goto        IntExit                 ; No  : Skip
+                banksel     PORTA                   ; Yes : Update display...
+; Setup Anodes and Cathode data for Most Significant Digit...
+                btfss       PORTA,Anode_0           ; Test if Anode_0 is active ?
+                goto        Not000                  ; No : Skip
+                bcf         PORTA,Anode_0           ; Yes: Anode_0 => off
+                movfw       NixiePortA_0
+                movwf       PORTA                   ; Set PORTA cathode bit...
+                bsf         PORTA,Anode_1           ;    ... and overlay anode bit. Anode_1 => on
+                movfw       NixiePortB_0
+                movwf       PORTB                   ; Set PortB cathode bit
+                movfw       NixiePortC_0
+                movwf       PORTC                   ; Set PortC cathode bit
+                goto        IntExit
+;
+; Setup Anodes and Cathode data for Next Digit...
+Not000:         btfss       PORTA,Anode_1           ; Test if Anode_1 is active ?
+                goto        Default                 ; No : Skip
+                bcf         PORTA,Anode_1           ; Yes: Anode_1 => off
+                movfw       NixiePortA_1
+                movwf       PORTA                   ; Set PORTA cathode bit...
+                bsf         PORTA,Anode_2           ;    ... and overlay anode bit. Anode2 => on
+                movfw       NixiePortB_1
+                movwf       PORTB                   ; Set PortB cathode bit
+                movfw       NixiePortC_1
+                movwf       PORTC                   ; Set PortC cathode bit
+                goto        IntExit
+;
+; Setup Anodes and Cathode data for Least Significant Digit...
+Default:        bcf         PORTA,Anode_1           ; Anode_1 => off
+                bcf         PORTA,Anode_2           ; Anode_2 => off
+                movfw       NixiePortA_2
+                movwf       PORTA                   ; Set PORTA cathode bit...
+                bsf         PORTA,Anode_0           ;    ... and overlay anode bit. Anode0 => on
+                movfw       NixiePortB_2
+                movwf       PORTB                   ; Set PortB cathode bit
+                movfw       NixiePortC_2
+                movwf       PORTC                   ; Set PortC cathode bit
+
+IntExit:        bcf         INTCON,T0IF             ; Clear Timer 0 interrupt flag                
+                retfie                              ; Done
 
 Main:
                 CLRF        PORTA                   ; Initialize PORTA by setting output data latches
@@ -244,7 +314,7 @@ Main:
                                                     ; Bit 2 R/W: Read/Write bit information (I2C mode only)
                                                     ;   This bit holds the R/W bit information following the last address match. This bit is only valid from the address match
                                                     ;   to the next Start bit, Stop bit, or not ACK bit.
-                                                    ;   In I2 C Slave mode:
+                                                    ;   In I2C Slave mode:
                                                     ;     1 = Read
                                                     ;     0 = Write
                                                     ;   In I2C Master mode:
@@ -321,20 +391,23 @@ Main:
                 movwf       PIE1                    ; Enable Synchronous Serial Port (MSSP) Interrupt Enable
 ;
                 banksel     0
-LoopReset:      clrf        COUNTER_hi
-                clrf        COUNTER_lo
-                movwf       COUNTER_lo
+LoopReset:      clrf        Counter_hi
+                clrf        Counter_lo
+                movwf       Counter_lo
 MainLoop:
-                banksel     SSP1BUF
-                movfw       SSP1BUF
-                banksel     0
-                movwf       COUNTER_lo
+#ifdef          SPI    
+; Code to read from SPI...    
+;                banksel     SSP1BUF
+;                movfw       SSP1BUF
+;                banksel     0
+;                movwf       Counter_lo
+ #endif
                 
                 bcf         INTCON,GIE              ; Suspend interrupts
 
-                movfw       COUNTER_lo              ; Load 16 bit dividend value
+                movfw       Counter_lo              ; Load 16 bit dividend value
                 movwf       Dividend_lo
-                movfw       COUNTER_hi              ; Load 16 bit dividend value
+                movfw       Counter_hi              ; Load 16 bit dividend value
                 movwf       Dividend_hi
 ; Calculate the values for the Most Significant Digit...
                 movlw       d'100'                  ; Load Divisor value (8 bit)
@@ -384,11 +457,14 @@ MainLoop:
                 movfw       Remainder               ; Restore value, W => Number of 1's
                 call        PortC_Lookup            ; Get PortC bitmap required for this value
                 movwf       NixiePortC_2            ; Store bitmap for use by Interrupt routine
-; 16 bit counter bump...
-;                incf        COUNTER_lo              ;  Increment the Lower Byte
-;                btfsc       STATUS, Z               ;  If the Zero Flag is Set
-;                incf        COUNTER_hi              ;  Increment the Upper Byte
 
+#ifndef         SPI
+; Code to bump 16 bit counter...
+                incf        Counter_lo              ;  Increment the Lower Byte
+                btfsc       STATUS, Z               ;  If the Zero Flag is Set
+                incf        Counter_hi              ;  Increment the Upper Byte
+#endif
+                
                 bsf         INTCON,GIE              ; Resume interrupts
                 call        DELAY3
                 goto        MainLoop
@@ -428,54 +504,6 @@ PortC_Lookup:   addwf       PCL,F
                 retlw       (1<<Cathode_9)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-; Interrupt Service Routine.
-; Can be triggered by...
-;   1) Timer 0 Overflowing              (Fosc/4 counter)
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-Interrupt:
-                banksel     PORTA
-; Setup Anodes and Cathode data for Most Significant Digit...
-                btfss       PORTA,Anode_0           ; Test if Anode_0 is active ?
-                goto        Not000                  ; No : Skip
-                bcf         PORTA,Anode_0           ; Anode_0 => off
-                movfw       NixiePortA_0
-                movwf       PORTA                   ; Set PORTA cathode bit...
-                bsf         PORTA,Anode_1           ;    ... and overlay anode bit. Anode_1 => on
-                movfw       NixiePortB_0
-                movwf       PORTB                   ; Set PortB cathode bit
-                movfw       NixiePortC_0
-                movwf       PORTC                   ; Set PortC cathode bit
-                goto        IntExit
-;
-; Setup Anodes and Cathode data for Next Digit...
-Not000:         btfss       PORTA,Anode_1           ; Test if Anode_1 is active ?
-                goto        Default                 ; No : Skip
-                bcf         PORTA,Anode_1           ; Anode_1 => off
-                movfw       NixiePortA_1
-                movwf       PORTA                   ; Set PORTA cathode bit...
-                bsf         PORTA,Anode_2           ;    ... and overlay anode bit. Anode2 => on
-                movfw       NixiePortB_1
-                movwf       PORTB                   ; Set PortB cathode bit
-                movfw       NixiePortC_1
-                movwf       PORTC                   ; Set PortC cathode bit
-                goto        IntExit
-;
-; Setup Anodes and Cathode data for Least Significant Digit...
-Default:        bcf         PORTA,Anode_0           ; Anode_0 => off
-                bcf         PORTA,Anode_1           ; Anode_1 => off
-                movfw       NixiePortA_2
-                movwf       PORTA                   ; Set PORTA cathode bit...
-                bsf         PORTA,Anode_0           ;    ... and overlay anode bit. Anode0 => on
-                movfw       NixiePortB_2
-                movwf       PORTB                   ; Set PortB cathode bit
-                movfw       NixiePortC_2
-                movwf       PORTC                   ; Set PortC cathode bit
-;
-IntExit:        bcf         INTCON,T0IF             ; Clear Timer0 interrupt flag
-                bsf         INTCON,T0IE             ; Re-enable Timer0 interrupts
-                retfie                              ; return from interupt
-
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ; Div 16 bit by 8 bit integer
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ; Long division, just like they taught me back in skhool. Only with a couple of differences...
@@ -491,7 +519,7 @@ IntExit:        bcf         INTCON,T0IF             ; Clear Timer0 interrupt fla
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 Div16x8:        clrf        Quotient
                 movlw       8 + 1                   ; 8 shifts will fully move the lo byte into the hi byte
-                movwf       Count                   ;   Loop mechanism needs + 1
+                movwf       Count                   ;   Loop mechanism needs n+1
 DivLoop:        movfw       Divisor                 ; Get Divisor value
                 subwf       Dividend_hi,W           ; Attempt subtraction
                 btfsc       STATUS,C                ; Is hi byte >= Divisor ?
