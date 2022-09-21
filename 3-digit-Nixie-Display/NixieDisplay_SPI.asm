@@ -2,7 +2,7 @@
     list                p=16F1509, c=150            ; List directive to define processor, 150 column width
     #include            <p16F1509.inc>              ; Processor specific variable definitions
     errorlevel  -302
-    
+
     #define             SPI                         ; Switch between Counter and SPI
 
 ; CONFIG1
@@ -10,12 +10,12 @@
  __CONFIG _CONFIG1, _FOSC_INTOSC & _WDTE_OFF & _PWRTE_OFF & _MCLRE_ON & _CP_OFF & _BOREN_OFF & _CLKOUTEN_OFF & _IESO_OFF & _FCMEN_OFF
 ; CONFIG2
 ; __config 0x19FC
- __CONFIG _CONFIG2, _WRT_ALL & _STVREN_OFF & _BORV_HI & _LPBOR_OFF & _LVP_OFF
+ __CONFIG _CONFIG2, _WRT_ALL & _STVREN_ON & _BORV_HI & _LPBOR_OFF & _LVP_OFF
 
 ; Pin definitions...
 ; SPI bus (limited connection options, so assign these first)...
 SDI             equ         RB4                     ; SPI Data in  => Pin 13
-SDO             equ         RC7                     ; SPI Data out => Pin  9         
+SDO             equ         RC7                     ; SPI Data out => Pin  9
 SCK             equ         RB6                     ; SPI Clock    => Pin 11
 SS1             equ         RC6                     ; SPI Select   => Pin  8
 
@@ -26,11 +26,11 @@ Anode_2         equ         RA1                     ; Pin 18
 Cathode_4       equ         RA4                     ; Pin  3
 Cathode_5       equ         RA5                     ; Pin  2
 
-; Port B connections...       
+; Port B connections...
 Cathode_0       equ         RB7                     ; Pin 10
 Cathode_6       equ         RB5                     ; Pin 12
 
-; Port C connections...       
+; Port C connections...
 Cathode_1       equ         RC3                     ; Pin  7
 Cathode_9       equ         RC0                     ; Pin 16
 Cathode_8       equ         RC1                     ; Pin 15
@@ -40,13 +40,13 @@ Cathode_3       equ         RC5                     ; Pin  5
 
 ; Data Memory allocation...
     CBLOCK h'20'
-                Counter_lo                           ; 16 bit number (0->999) to be displayed on Nixies
-                Counter_hi
                 COUNT1
                 COUNT2
 ; Variables associated with the SPI communications...
-                Data_lo
+                Data_lo                           ; 16 bit number (0->999) to be displayed on Nixies
                 Data_hi
+                Flag
+                Timeout
 ; Variables associated with the Div16x8 function...
                 Dividend_lo                         ; 16 bit
                 Dividend_hi
@@ -81,81 +81,49 @@ Cathode_3       equ         RC5                     ; Pin  5
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ; Interrupt Service Routine.
 ; Can be triggered by...
-;   1) Timer 0 Overflowing              (Fosc/4 counter)
-;   2) SPI data recepton                
+;   1) SPI data recepton
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-TestSPI:        
-                banksel     PIR1
-                btfss       PIR1,SSP1IF             ; SPI interrupt ?
-                goto        TestTMR0                ; No  : Skip
-                movfw       Data_lo                 ; Yes : Shift previous byte
-                movwf       Data_hi
-                movwf       Counter_hi              ; Copy to counter
+Interrupt:                                          ; Interrupt vector at 0x04
+; First byte...
+; Note: We don't need to check for a Timeout on the first byte. The interrupt has triggered, so its safe to assume
+;       a data byte will be in the buffer
                 banksel     SSP1BUF
-                movfw       SSP1BUF                 ; Get current byte
+                movfw       SSP1BUF
+                banksel     0
+                movwf       Data_hi
+; Get second byte...
+BuffWait:
+                banksel     0
+                decf        Timeout,f
+                BZ          IntExit                 ; Give up and get out. Timeout prevents SPI comms failures from
+                                                    ; locking the system
+                banksel     SSP1STAT
+                btfss       SSP1STAT,BF             ; Test for second byte in buffer...
+                goto        BuffWait
+                banksel     SSP1BUF
+                movfw       SSP1BUF
                 banksel     0
                 movwf       Data_lo
-                movwf       Counter_lo              ; Copy to counter
+                movlw       0xff                    ; Flag for update
+                movwf       Flag
 
+IntExit:
                 banksel     PIR1
-                bcf         PIR1,SSP1IF             ; Clear Timer 0 interrupt flag                
-TestTMR0:       
-                banksel     INTCON
-                btfss       INTCON,TMR0IF           ; Timer 0 interrupt ?
-                goto        IntExit                 ; No  : Skip
-                banksel     PORTA                   ; Yes : Update display...
-; Setup Anodes and Cathode data for Most Significant Digit...
-                btfss       PORTA,Anode_0           ; Test if Anode_0 is active ?
-                goto        Not000                  ; No : Skip
-                bcf         PORTA,Anode_0           ; Yes: Anode_0 => off
-                movfw       NixiePortA_0
-                movwf       PORTA                   ; Set PORTA cathode bit...
-                bsf         PORTA,Anode_1           ;    ... and overlay anode bit. Anode_1 => on
-                movfw       NixiePortB_0
-                movwf       PORTB                   ; Set PortB cathode bit
-                movfw       NixiePortC_0
-                movwf       PORTC                   ; Set PortC cathode bit
-                goto        IntExit
-;
-; Setup Anodes and Cathode data for Next Digit...
-Not000:         btfss       PORTA,Anode_1           ; Test if Anode_1 is active ?
-                goto        Default                 ; No : Skip
-                bcf         PORTA,Anode_1           ; Yes: Anode_1 => off
-                movfw       NixiePortA_1
-                movwf       PORTA                   ; Set PORTA cathode bit...
-                bsf         PORTA,Anode_2           ;    ... and overlay anode bit. Anode2 => on
-                movfw       NixiePortB_1
-                movwf       PORTB                   ; Set PortB cathode bit
-                movfw       NixiePortC_1
-                movwf       PORTC                   ; Set PortC cathode bit
-                goto        IntExit
-;
-; Setup Anodes and Cathode data for Least Significant Digit...
-Default:        bcf         PORTA,Anode_1           ; Anode_1 => off
-                bcf         PORTA,Anode_2           ; Anode_2 => off
-                movfw       NixiePortA_2
-                movwf       PORTA                   ; Set PORTA cathode bit...
-                bsf         PORTA,Anode_0           ;    ... and overlay anode bit. Anode0 => on
-                movfw       NixiePortB_2
-                movwf       PORTB                   ; Set PortB cathode bit
-                movfw       NixiePortC_2
-                movwf       PORTC                   ; Set PortC cathode bit
+                bcf         PIR1,SSP1IF             ; Clear SPI interrupt
 
-IntExit:        bcf         INTCON,T0IF             ; Clear Timer 0 interrupt flag                
                 retfie                              ; Done
-
 Main:
                 CLRF        PORTA                   ; Initialize PORTA by setting output data latches
                 BANKSEL     ANSELA
-                CLRF        ANSELA                  ; Digital I/O                
+                CLRF        ANSELA                  ; Digital I/O
                 BANKSEL     ANSELB
-                CLRF        ANSELB                  ; Digital I/O                
+                CLRF        ANSELB                  ; Digital I/O
                 BANKSEL     ANSELC
                 CLRF        ANSELC                  ; Digital I/O
 
                 BANKSEL     TRISA
-                MOVLW       0x00                    ; Set RA<4:0> as outputs
-                movlw       b'00001000'             ; CS TRIS bit set, all others clear 
+;               MOVLW       0x00                    ; Set RA<4:0> as outputs
+                movlw       b'00001000'             ; CS TRIS bit set, all others clear
                 MOVWF       TRISA                   ;     RA<6:7> as outputs
 
                 BANKSEL     TRISB                   ; Initialise Port B...
@@ -166,24 +134,26 @@ Main:
                 MOVLW       b'01000000'             ; CS input
                                                     ; SDO TRIS bit clear, all others as outputs
                 MOVWF       TRISC                   ; Set RC<7:0> as outputs
-                
-                banksel     TMR0
-                clrf        TMR0
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ; INTCON register configuration...
-; Set Global Interupt and Timer 0 Interrupts active...
+; Set Global Interupts...
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+; GIE enable
+; PEIE enable
+
                 banksel     INTCON
-                movlw       b'10100000'             ; Bit 7 GIE: Global Interrupt Enable bit
+;               movlw       b'10100000'             ; Bit 7 GIE: Global Interrupt Enable bit
+                movlw       b'11000000'             ; Bit 7 GIE: Global Interrupt Enable bit
                                                     ; *   1 = Enables all active interrupts
                                                     ;     0 = Disables all interrupts
                                                     ; Bit 6 PEIE: Peripheral Interrupt Enable bit
-                                                    ;     1 = Enables all active peripheral interrupts
-                                                    ; *   0 = Disables all peripheral interrupts
+                                                    ; *   1 = Enables all active peripheral interrupts
+                                                    ;     0 = Disables all peripheral interrupts
                                                     ; Bit 5 TMR0IE: Timer0 Overflow Interrupt Enable bit
-                                                    ; *   1 = Enables the Timer0 interrupt
-                                                    ;     0 = Disables the Timer0 interrupt
+                                                    ;     1 = Enables the Timer0 interrupt
+                                                    ; *   0 = Disables the Timer0 interrupt
                                                     ; Bit 4 INTE: INT External Interrupt Enable bit
                                                     ;     1 = Enables the INT external interrupt
                                                     ; *   0 = Disables the INT external interrupt
@@ -198,37 +168,7 @@ Main:
                                                     ; *   0 = The INT external interrupt did not occur
                                                     ; Bit 0 IOCIF: Interrupt-on-Change Interrupt Flag bit(1)
                                                     ;     1 = When at least one of the interrupt-on-change pins changed state
-                movwf       INTCON                  ; *   0 = None of the interrupt-on-change pins have changed state                                                    
-
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-; OPTION_REG register configuration...
-; Set Timer 0 Prescaler as 1::16...
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-                banksel     OPTION_REG
-                movlw       b'10000011'             ; Bit 7 WPUEN: Weak Pull-up Enable ; ; 
-                                                    ; *   1 = All weak pull-ups are disabled (except MCLR, if it is enabled)
-                                                    ;     0 = Weak pull-ups are enabled by individual WPUx latch values
-                                                    ; Bit 6 INTEDG: Interrupt Edge Select bit
-                                                    ;     1 = Interrupt on rising edge of INT pin
-                                                    ; *   0 = Interrupt on falling edge of INT pin
-                                                    ; Bit 5 TMR0CS: Timer0 Clock Source Select bit
-                                                    ;     1 = Transition on T0CKI pin
-                                                    ; *   0 = Internal instruction cycle clock (FOSC/4)
-                                                    ; Bit 4 TMR0SE: Timer0 Source Edge Select bit
-                                                    ;     1 = Increment on high-to-low transition on T0CKI pin
-                                                    ; *   0 = Increment on low-to-high transition on T0CKI pin
-                                                    ; Bit 3 PSA: Prescaler Assignment bit
-                                                    ;     1 = Prescaler is not assigned to the Timer0 module
-                                                    ; *   0 = Prescaler is assigned to the Timer0 module                                                    
-                                                    ;       Bit value   : TMR0 Rate
-                                                    ;           000     :   1 : 1
-                                                    ;           001     :   1 : 2
-                                                    ;           010     :   1 : 8
-                                                    ; *         011     :   1 : 16 (slowest without flicker)
-                                                    ;           100     :   1 : 32
-                                                    ;           101     :   1 : 64
-                                                    ;           110     :   1 : 128
-                movwf       OPTION_REG              ;           111     :   1 : 256
+                movwf       INTCON                  ; *   0 = None of the interrupt-on-change pins have changed state
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ; OSCON register configuration...
@@ -278,7 +218,7 @@ Main:
                 movwf       APFCON                 ; * 0 = NCO1 function is on RC1
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-; SSP1STAT + SSP1CON1 register configuration...
+; SSP1STAT register configuration...
 ; Set SPI Slave mode...
 ; Initalize SPI...
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -290,7 +230,7 @@ Main:
                                                     ;     0 = Input data sampled at middle of data output time
                                                     ;   SPI Slave mode:
                                                     ;   SMP must be cleared when SPI is used in Slave mode
-                                                    ;     In I2 C Master or Slave mode:
+                                                    ;     In I2C Master or Slave mode:
                                                     ;     1 = Slew rate control disabled
                                                     ; *   0 = Slew rate control enabled
                                                     ; Bit 6 CKE: SPI Clock Edge Select bit (SPI mode only)
@@ -321,7 +261,7 @@ Main:
                                                     ;     1 = Transmit is in progress
                                                     ;     0 = Transmit is not in progress
                                                     ;   OR-ing this bit with SEN, RSEN, PEN, RCEN or ACKEN will indicate if the MSSP is in Idle mode.
-                                                    ;   bit 1 UA: Update Address bit (10-bit I2C mode only)
+                                                    ; Bit 1 UA: Update Address bit (10-bit I2C mode only)
                                                     ;     1 = Indicates that the user needs to update the address in the SSPxADD register
                                                     ;     0 = Address does not need to be updated
                                                     ; Bit 0 BF: Buffer Full Status bit
@@ -330,8 +270,12 @@ Main:
                                                     ;     0 = Receive not complete, SSPxBUF is empty
                                                     ;   Transmit (I2C mode only):
                                                     ;     1 = Data transmit in progress (does not include the ACK and Stop bits), SSPxBUF is full
-                movwf       SSP1STAT                ;     0 = Data transmit complete (does not include the ACK and Stop bits), SSPxBUF is empty                
+                movwf       SSP1STAT                ;     0 = Data transmit complete (does not include the ACK and Stop bits), SSPxBUF is empty
 ;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+; SSP1CON1 register configuration...
+; Set up SPI communication parameters...
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
                 movlw       b'01100100'             ; Bit 7 WCOL: Write Collision Detect bit
                                                     ;   Master mode:
                                                     ;     1 = A write to the SSPxBUF register was attempted while the I2C conditions were not valid for a transmission to be started
@@ -346,7 +290,7 @@ Main:
                                                     ;     setting overflow. In Master mode, the overflow bit is not set since each new reception (and transmission) is initiated by writing to the
                                                     ;     SSPxBUF register (must be cleared in software).
                                                     ;     0 = No overflow
-                                                    ;   In I2 C mode:
+                                                    ;   In I2C mode:
                                                     ;     1 = A byte is received while the SSPxBUF register is still holding the previous byte. SSPOV is a ?don?t care? in Transmit mode
                                                     ;     (must be cleared in software).
                                                     ;     0 = No overflow
@@ -355,14 +299,14 @@ Main:
                                                     ;   In SPI mode:
                                                     ; *   1 = Enables serial port and configures SCKx, SDOx, SDIx and SSx as the source of the serial port pins(2)
                                                     ;     0 = Disables serial port and configures these pins as I/O port pins
-                                                    ;   In I2 C mode:
+                                                    ;   In I2C mode:
                                                     ;     1 = Enables the serial port and configures the SDAx and SCLx pins as the source of the serial port pins(3)
                                                     ;     0 = Disables serial port and configures these pins as I/O port pins
                                                     ; Bit 4 CKP: Clock Polarity Select bit
                                                     ;   In SPI mode:
                                                     ;     1 = Idle state for clock is a high level
                                                     ; *   0 = Idle state for clock is a low level
-                                                    ;   In I2 C Slave mode:
+                                                    ;   In I2C Slave mode:
                                                     ;     SCLx release control
                                                     ;     1 = Enable clock
                                                     ;     0 = Holds clock low (clock stretch). (Used to ensure data setup time.)
@@ -384,40 +328,124 @@ Main:
                                                     ;   1100 = Reserved
                                                     ;   1101 = Reserved
                                                     ;   1110 = I2C Slave mode, 7-bit address with Start and Stop bit interrupts enabled
-                                                    ;   1111 = I2C Slave mode, 10-bit address with Start and Stop bit interrupts enabled                
-                movwf       SSP1CON1                ; SPI Slave Mode, SS pin control enabled, Clock idle=low, re-enable the SSP module 
+                                                    ;   1111 = I2C Slave mode, 10-bit address with Start and Stop bit interrupts enabled
+                movwf       SSP1CON1                ; SPI Slave Mode, SS pin control enabled, Clock idle=low, re-enable the SSP module
 
-                movwf       b'00001000'
-                movwf       PIE1                    ; Enable Synchronous Serial Port (MSSP) Interrupt Enable
+                banksel     PIE1
+                movlw       b'00001000'
+                movwf       PIE1                    ; Enable Synchronous Serial Port (MSSP) Interrupt
+;
+;
 ;
                 banksel     0
-LoopReset:      clrf        Counter_hi
-                clrf        Counter_lo
-                movwf       Counter_lo
-MainLoop:
-#ifdef          SPI    
-; Code to read from SPI...    
-;                banksel     SSP1BUF
-;                movfw       SSP1BUF
-;                banksel     0
-;                movwf       Counter_lo
- #endif
-                
-                bcf         INTCON,GIE              ; Suspend interrupts
 
-                movfw       Counter_lo              ; Load 16 bit dividend value
+                movlw       (d'987'/d'256')             ; Dummy data
+                movwf       Data_hi
+                movlw       (d'987'%d'256')
+                movwf       Data_lo
+                call        DisplayData
+
+MainLoop:
+                call        Delay
+
+                banksel     0
+                movlw       0xff
+                subwf       Flag,w
+                btfsc       STATUS,Z                ; UpdateFlag set ?
+                call        DisplayData             ; Yes: Update display data
+                                                    ; No : Continue scan
+; Setup Anodes and Cathode data for Most Significant Digit...
+                btfss       PORTA,Anode_0           ; Test if Anode_0 is active ?
+                goto        Not000                  ; No : Skip
+                bcf         PORTA,Anode_0           ; Yes: Anode_0 => off
+                movfw       NixiePortA_0
+                movwf       PORTA                   ; Set PORTA cathode bit...
+                bsf         PORTA,Anode_1           ;    ... and overlay anode bit. Anode_1 => on
+                movfw       NixiePortB_0
+                movwf       PORTB                   ; Set PortB cathode bit
+                movfw       NixiePortC_0
+                movwf       PORTC                   ; Set PortC cathode bit
+                goto        MainLoop
+;
+; Setup Anodes and Cathode data for Next Digit...
+Not000:         btfss       PORTA,Anode_1           ; Test if Anode_1 is active ?
+                goto        Default                 ; No : Skip
+                bcf         PORTA,Anode_1           ; Yes: Anode_1 => off
+                movfw       NixiePortA_1
+                movwf       PORTA                   ; Set PORTA cathode bit...
+                bsf         PORTA,Anode_2           ;    ... and overlay anode bit. Anode2 => on
+                movfw       NixiePortB_1
+                movwf       PORTB                   ; Set PortB cathode bit
+                movfw       NixiePortC_1
+                movwf       PORTC                   ; Set PortC cathode bit
+                goto        MainLoop
+;
+; Setup Anodes and Cathode data for Least Significant Digit...
+Default:        bcf         PORTA,Anode_1           ; Anode_1 => off
+                bcf         PORTA,Anode_2           ; Anode_2 => off
+                movfw       NixiePortA_2
+                movwf       PORTA                   ; Set PORTA cathode bit...
+                bsf         PORTA,Anode_0           ;    ... and overlay anode bit. Anode0 => on
+                movfw       NixiePortB_2
+                movwf       PORTB                   ; Set PortB cathode bit
+                movfw       NixiePortC_2
+                movwf       PORTC                   ; Set PortC cathode bit
+                goto        MainLoop
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+; Div 16 bit by 8 bit integer
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+; Long division, just like they taught me back in skhool. Only with a couple of differences...
+;       1) It's in binary, not decimal
+;       2) Instead of shifting the Divisor to the right, the Dividend gets shifted to the left.
+;              (this gives better use of registers, and more compact code)
+;
+; Inputs:  16 bit Dividend  - Dividend_hi
+;                             Dividend_lo
+;           8 bit Divisor   - Divisor
+; Outputs:  8 bit Quotient  - Quotient
+;           8 bit Remainder - Remainder
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+Div16x8:        clrf        Quotient
+                movlw       8 + 1                   ; 8 shifts will fully move the lo byte into the hi byte
+                movwf       Count                   ;   Loop mechanism needs n+1
+DivLoop:        movfw       Divisor                 ; Get Divisor value
+                subwf       Dividend_hi,W           ; Attempt subtraction
+                btfsc       STATUS,C                ; Is hi byte >= Divisor ?
+                movwf       Dividend_hi             ;     Yes: Replace Dividend_hi with (Dividend_hi - Divisor)
+                rlf         Quotient,F              ;     No : Continue: Shift result into Quotient
+                movfw       Dividend_hi             ; Grab Remainder before it gets destroyed (shifted)
+                movwf       Remainder               ; Store result
+                rlf         Dividend_lo,F           ; 16 bit shift Dividend for the next itteration.
+                rlf         Dividend_hi,F
+                decfsz      Count,F                 ; Repeat 8 times
+                goto        DivLoop
+                return
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+; Convert 16 bit data value to Nixie Display data
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+DisplayData:
+                clrf        Flag
+; 16 bit data validation...
+                movlw       0x03                    ; MSB (d'999' = 0x3e7)
+                subwf       Data_hi,w               ; Subtract 0x03-Data_hi
+                skpz                                ; Skip if equal
+                goto        result
+                movlw       0xe8                    ; LSB (d'1000' = 0x3e8)
+		subwf       Data_lo,w               ; Subtract 0xe8-Data_lo
+result:                                             ; If Data=d'1000' then Z=1.
+                skpnc                               ; If Data>=100 then C=1.
+                return                              ; Data Error - updating the display would crash the processor
+                                                    ; If Data<1000 then C=0.
+                movfw       Data_lo                 ; Load 16 bit dividend value
                 movwf       Dividend_lo
-                movfw       Counter_hi              ; Load 16 bit dividend value
+                movfw       Data_hi                 ; Load 16 bit dividend value
                 movwf       Dividend_hi
 ; Calculate the values for the Most Significant Digit...
                 movlw       d'100'                  ; Load Divisor value (8 bit)
                 movwf       Divisor
                 call        Div16x8
-; Use the value to check if we have reached the display limit...
-                movfw       Quotient                ; W => Number of 100's
-                sublw       d'10'                   ; Check for overflow (>999)
-                btfsc       STATUS,Z
-                goto        LoopReset               ; Reset counter and start again
 ;
                 movfw       Quotient                ; W => Number of 100's
                 movwf       NixieBuff_0             ; Write 100's
@@ -458,16 +486,7 @@ MainLoop:
                 call        PortC_Lookup            ; Get PortC bitmap required for this value
                 movwf       NixiePortC_2            ; Store bitmap for use by Interrupt routine
 
-#ifndef         SPI
-; Code to bump 16 bit counter...
-                incf        Counter_lo              ;  Increment the Lower Byte
-                btfsc       STATUS, Z               ;  If the Zero Flag is Set
-                incf        Counter_hi              ;  Increment the Upper Byte
-#endif
-                
-                bsf         INTCON,GIE              ; Resume interrupts
-                call        DELAY3
-                goto        MainLoop
+                return
 ;
 PortA_Lookup:   addwf       PCL,F
                 retlw       0                       ; Cathode 0 not on Port A
@@ -504,44 +523,18 @@ PortC_Lookup:   addwf       PCL,F
                 retlw       (1<<Cathode_9)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-; Div 16 bit by 8 bit integer
+; Rough and Ready delay routine.
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-; Long division, just like they taught me back in skhool. Only with a couple of differences...
-;       1) It's in binary, not decimal
-;       2) Instead of shifting the Divisor to the right, the Dividend gets shifted to the left.
-;              (this gives better use of registers, and more compact code)
-;
-; Inputs:  16 bit Dividend  - Dividend_hi
-;                             Dividend_lo
-;           8 bit Divisor   - Divisor
-; Outputs:  8 bit Quotient  - Quotient
-;           8 bit Remainder - Remainder     
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-Div16x8:        clrf        Quotient
-                movlw       8 + 1                   ; 8 shifts will fully move the lo byte into the hi byte
-                movwf       Count                   ;   Loop mechanism needs n+1
-DivLoop:        movfw       Divisor                 ; Get Divisor value
-                subwf       Dividend_hi,W           ; Attempt subtraction
-                btfsc       STATUS,C                ; Is hi byte >= Divisor ?
-                movwf       Dividend_hi             ;     Yes: Replace Dividend_hi with (Dividend_hi - Divisor)
-                rlf         Quotient,F              ;     No : Continue: Shift result into Quotient
-                movfw       Dividend_hi             ; Grab Remainder before it gets destroyed (shifted)
-                movwf       Remainder               ; Store result
-                rlf         Dividend_lo,F           ; 16 bit shift Dividend for the next itteration.
-                rlf         Dividend_hi,F
-                decfsz      Count,F                 ; Repeat 8 times
-                goto        DivLoop
+Delay:
+                movlw       0x20
+                movwf       COUNT2
+DelayLoop:      decfsz      COUNT1,F
+                goto        DelayLoop
+                decfsz      COUNT2,F
+                goto        DelayLoop
                 return
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+                end
 
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-; Rough and Ready time delay routine.
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-DELAY3:         DECFSZ      COUNT1,F
-                GOTO        DELAY3
-                DECFSZ      COUNT2,F
-                GOTO        DELAY3
-                RETURN
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-    end
 
 
