@@ -1,19 +1,23 @@
 /* 
- * SPI module with Nixie Tube display.
- * Nixie tubes require a HV (170 volt) supply, which is obtained from an internal buck converter.
- * This allows the unit to run from a 6 to 12 volt supply.
+ * Hardware test routine for the 3 Digit Nixie Display module.
+ * Creates a simple 3 digit counter on the module.
  * 
- * Note: Using the X IDE in debug mode DOES NOT write correctly to the PIC output latches, and may incorrectly look like the code has errors. To avoid
- *       this issue, build the code for production, and test directly on the Nixie display module.
+ * Fail if the digits are in the wrong place. - Anode bus has got twisted.
+ * Fail if the digits aren't counting in the correct order. - Cathode bus has got twisted.
+ * Pass if the module displays a three digit counter ranging from 0 to 999.
+ * 
+ * Note: When debugging code, X IDE DOES NOT write correctly to the PIC output latches, and may look like
+ *       the code has errors. To avoid this issue, build the code for production, and re-test on module.
  * 
  * TBD:
  *  1) Nixie digit numbering is reversed
  *  2) Implement interrupt routine.
+ *  3) List full pin assignments.
  */
 
-// PIC16F15344 Configuration Bit Settings
-
 #pragma warning disable 1020        // Disable warning to provide clean build
+
+// PIC16F15344 Configuration Bit Settings
 
 // CONFIG1
 #pragma config FEXTOSC = OFF        // External Oscillator mode selection bits->Oscillator not enabled
@@ -72,29 +76,30 @@
 #define CATHODE_9           LATB5
 */
 
-uint16_t                    Value, TempValue ;                      // 16 bit value to be displayed
-unsigned char               Nixie[3] ;                              // Digits to be displayed on NIXIE tubes
-unsigned char               AnodeCtr ;                              // 8 bits
-unsigned char               Timer ;                                 // Loop counter
-unsigned char               temp ;
+uint16_t                Value, TempValue ;                      // 16 bit value to be displayed
+uint8_t                 Nixie[3] ;                              // Digits to be displayed on NIXIE tubes
+uint8_t                 AnodeCtr ;                              // 8 bits
+uint8_t                 Timer ;                                 // Loop counter
+uint8_t                 temp ;
 
 // Lookup tables...
-const unsigned char     PORT_A[10] = { 0x01, 0x02, 0x04, 0x20, 0x10, 0, 0, 0, 0, 0 } ;  // Port A Cathode connections
-const unsigned char     PORT_B[10] = { 0, 0, 0, 0, 0, 0, 0, 0x80, 0x10, 0x20 } ;        // Port B Cathode connections
-const unsigned char     PORT_C[10] = { 0, 0, 0, 0, 0, 0x40, 0x80, 0, 0, 0 } ;           // Port C Cathode connections
+const uint8_t           PORT_A[10] = { 0x01, 0x02, 0x04, 0x20, 0x10, 0, 0, 0, 0, 0 } ;  // Port A Cathode connections
+const uint8_t           PORT_B[10] = { 0, 0, 0, 0, 0, 0, 0, 0x80, 0x10, 0x20 } ;        // Port B Cathode connections
+const uint8_t           PORT_C[10] = { 0, 0, 0, 0, 0, 0x40, 0x80, 0, 0, 0 } ;           // Port C Cathode connections
 
 ///////////////////////////////
 // Interrupt Service Routine //
 ///////////////////////////////
 void __interrupt () isr(void) {
+    // TBD
 }
+
 int main(void) {
-    // Use the PPS register to move all SPI connections to unused pins...
-    SSP1CLKPPS = 0x11;                  //RC1->MSSP1:SCK1;    
-    RB6PPS = 0x16;                      //RB6->MSSP1:SDO1;    
-    SSP1SSPPS = 0x13;                   //RC3->MSSP1:SS1;    
-    SSP1DATPPS = 0x12;                  //RC2->MSSP1:SDI1;       
-    
+    // Initialise SPI port...
+    SSP1CLKPPS = 0x11;                  // MSSP1:SCK1 -> RC1
+    RB6PPS = 0x16;                      // MSSP1:SDO1 -> RB6
+    SSP1SSPPS = 0x13;                   // MSSP1:SS1  -> RC3    
+    SSP1DATPPS = 0x12;                  // MSSP1:SDI1 -> RC2
     // Initialise Port A...
     ANSELA = 0 ;                        // All pins on PORTA digital
     PORTA = 0 ;                         // All outputs lows
@@ -116,7 +121,7 @@ int main(void) {
         for ( Value=0;  Value<=999; Value++) {
             // Convert the 16 bit value into 3 digits for display.
             //         Note: Value and TempValue both need to be 16 bit variables...          
-            TempValue = Value ;              // Need to preserve value for loop counter
+            TempValue = Value ;              // Need to preserve Value for loop counter
             Nixie[0] = TempValue % 10 ;      // 100's
             TempValue /= 10 ;
             Nixie[1] = TempValue % 10 ;      // 10's
