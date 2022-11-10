@@ -3,8 +3,8 @@
 ![alt text](https://github.com/oddwires/RP2040/blob/master/Function%20Generator/Images/work-in-progress.gif)****Work In Progress.****
 ![alt text](https://github.com/oddwires/RP2040/blob/master/Function%20Generator/Images/work-in-progress.gif)   
    
-I am hoping to put together an instructable for this hardware - but its taking a ridiclous amount of time.   
-So here's a wobbly video of the HardwareTest.c code running on the display module.
+I am hoping to put together an instructable for this hardware - but its taking a ridiculous amount of time.   
+So in the meantime, here's a wobbly video of the HardwareTest.c code running on the display module.
 
 Features...
   * Nixie = 1N-17
