@@ -8,8 +8,9 @@
         <img src="https://img.youtube.com/vi/sS8ZSJQoGXY/0.jpg" style="width:100%;">
       </a>
 </div>
-  * Nixie = 1n-17
-  * Target CPU = PIC 16F1509
+
+Features...
+  * Nixie = 1N-17
+  * Micro controller = PIC 16F15344
   * 3v/5v SPI interface
   * Internal 170 volt SMPU
-  * Neat maths routine for 16 bit x 8  bit divide
