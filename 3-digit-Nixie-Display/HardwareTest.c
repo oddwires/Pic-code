@@ -1,5 +1,4 @@
-/* 
- * Hardware test routine for the 3 Digit Nixie Display module.
+/* Hardware test routine for the 3 Digit Nixie Display module.
  * Creates a simple 3 digit counter on the module.
  * 
  * Fail if the digits are in the wrong place. - Anode bus has got twisted.
@@ -8,11 +7,8 @@
  * 
  * Note: When debugging code, X IDE DOES NOT write correctly to the PIC output latches, and may look like
  *       the code has errors. To avoid this issue, build the code for production, and re-test on module.
- * 
  * TBD:
- *  1) Nixie digit numbering is reversed
  *  2) Implement interrupt routine.
- *  3) List full pin assignments.
  */
 
 #pragma warning disable 1020        // Disable warning to provide clean build
@@ -60,22 +56,6 @@
 
 #include <xc.h>                     // MPLAB XC8 header file
 
-/*
-#define ANODE_0             LATC0
-#define ANODE_1             LATC5
-#define ANODE_2             LATC4
-#define CATHODE_0           LATA0   //  CSPDAT
-#define CATHODE_1           LATA1   //  CSPCLK
-#define CATHODE_2           LATA2
-#define CATHODE_3           LATA5
-#define CATHODE_4           LATA4
-#define CATHODE_5           LATC6
-#define CATHODE_6           LATC7
-#define CATHODE_7           LATB7
-#define CATHODE_8           LATB4
-#define CATHODE_9           LATB5
-*/
-
 uint16_t                Value, TempValue ;                      // 16 bit value to be displayed
 uint8_t                 Nixie[3] ;                              // Digits to be displayed on NIXIE tubes
 uint8_t                 AnodeCtr ;                              // 8 bits
@@ -95,7 +75,28 @@ void __interrupt () isr(void) {
 }
 
 int main(void) {
-    // Initialise SPI port...
+    /* Micro Controller pin assignments...
+     * 
+     * Initialise the ports on the Micro Controller as per the diagram below.
+     * Notes: 1) Arrows indicate input/output.
+     *        2) Ports RA0 and RA1 normally function as outputs, but double up as inputs
+     *           when using the ICSP port to program the device.
+     * 
+     *                  |===============|
+     *                --| Vdd       Vss |--
+     *     Cathode_3 <--| RA5       RA0 |<-> Cathode_0 / CSPDAT
+     *     Cathode_4 <--| RA4       RA1 |<-> Cathode_1 / CSPCLK
+     *          MCLR -->| RA3       RA2 |--> Cathode_2
+     *       Anode_0 <--| RC5       RC0 |--> Anode_1
+     *       Anode_2 <--| RC4       RC1 |<-- SPI CLK
+     *        SPI CS -->| RC3       RC2 |<-- SPI DTA In
+     *     Cathode_5 <--| RC6       RB4 |--> Cathode_8
+     *     Cathode_6 <--| RC7       RB5 |--> Cathode_9
+     *     Cathode_7 <--| RB7       RB6 |--> SPI DTA Out
+     *                  |===============|
+     *                     PIC16F15344
+    */
+    // Initialise PPS pin mappings...
     SSP1CLKPPS = 0x11;                  // MSSP1:SCK1 -> RC1
     RB6PPS = 0x16;                      // MSSP1:SDO1 -> RB6
     SSP1SSPPS = 0x13;                   // MSSP1:SS1  -> RC3    
@@ -122,11 +123,11 @@ int main(void) {
             // Convert the 16 bit value into 3 digits for display.
             //         Note: Value and TempValue both need to be 16 bit variables...          
             TempValue = Value ;              // Need to preserve Value for loop counter
-            Nixie[0] = TempValue % 10 ;      // 100's
+            Nixie[0] = TempValue % 10 ;      // Units
             TempValue /= 10 ;
             Nixie[1] = TempValue % 10 ;      // 10's
             TempValue /= 10 ;
-            Nixie[2] = TempValue % 10 ;      // Units
+            Nixie[2] = TempValue % 10 ;      // 100's
 
             for ( Timer=0;  Timer<10; Timer++ ) {          
             // Timer loop - number of display scans before incrementing the counter...
