@@ -1,5 +1,11 @@
 ![alt text](https://github.com/oddwires/RP2040/blob/master/Function%20Generator/Images/work-in-progress.gif)****Work In Progress.****
 ![alt text](https://github.com/oddwires/RP2040/blob/master/Function%20Generator/Images/work-in-progress.gif)
+
+<div align="left">
+      <a href="https://www.youtube.com/embed/sS8ZSJQoGXY">
+        <img src="https://img.youtube.com/vi/sS8ZSJQoGXY/0.jpg" style="width:100%;">
+      </a>
+</div>
 # 3 Digit Nixie Display #
 
   * Nixie = 1n-17
