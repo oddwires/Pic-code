@@ -1,16 +1,17 @@
-![alt text](https://github.com/oddwires/RP2040/blob/master/Function%20Generator/Images/work-in-progress.gif)****Work In Progress.****
-![alt text](https://github.com/oddwires/RP2040/blob/master/Function%20Generator/Images/work-in-progress.gif)
-
 # 3 Digit Nixie Display #
 
-<div align="left">
-      <a href="https://www.youtube.com/embed/sS8ZSJQoGXY">
-        <img src="https://img.youtube.com/vi/sS8ZSJQoGXY/0.jpg" style="width:100%;">
-      </a>
-</div>
+![alt text](https://github.com/oddwires/RP2040/blob/master/Function%20Generator/Images/work-in-progress.gif)****Work In Progress.****
+![alt text](https://github.com/oddwires/RP2040/blob/master/Function%20Generator/Images/work-in-progress.gif)   
+   
+I am hoping to put together an instructable for this hardware - but its taking a ridiculous amount of time.   
+So in the meantime, here's a wobbly video of the HardwareTest.c code running on the display module.
 
 Features...
   * Nixie = 1N-17
   * Micro controller = PIC 16F15344
   * 3v/5v SPI interface
   * Internal 170 volt SMPU
+  * Really tiny
+  * Super cute
+
+https://user-images.githubusercontent.com/3483157/201137514-4708bd54-b83c-461b-b01f-03163cff46ae.mp4
