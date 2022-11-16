@@ -132,7 +132,7 @@ int main(void) {
 //         Cathode_3 <--| RA5       RA0 |<-> Cathode_0 / CSPDAT
 //         Cathode_4 <--| RA4       RA1 |<-> Cathode_1 / CSPCLK
 //              MCLR -->| RA3       RA2 |--> Cathode_2
-//           Anode_0 <--| RC5       RC0 |--> Anode_1
+//           Anode_1 <--| RC5       RC0 |--> Anode_0
 //           Anode_2 <--| RC4       RC1 |<-- SPI CLK
 //            SPI CS -->| RC3       RC2 |<-- SPI DTA In
 //         Cathode_5 <--| RC6       RB4 |--> Cathode_8
@@ -150,29 +150,29 @@ int main(void) {
     
     // Initialise Port A...
     ANSELA = 0 ;                        // All pins on PORTA digital
-    PORTA = 0 ;                         // All outputs lows
     TRISA = 0 ;                         // All pins on PORTA outputs
+    PORTA = 0 ;                         // All outputs low
     WPUA = 0;                           // Disable weak pull ups
     
     // Initialise Port B...
     ANSELB = 0 ;                        // All pins on PORTB digital
-    PORTB = 0 ;                         // All outputs low
     TRISB = 0 ;                         // All pins on PORTB outputs
+    PORTB = 0 ;                         // All outputs low
     WPUB = 0;                           // Disable weak pull ups
     
     // Initialise Port C...
     ANSELC = 0 ;                        // All pins on PORTC digital
+    TRISC = 0x0E ;                      // Pins <3:1> inputs, all others outputs
     PORTC = 0 ;                         // All outputs low
-    TRISC = 0 ;                         // All pins on PORTC outputs
     WPUC = 0;                           // Disable weak pull ups
 
-    // Timer 0 controls the display scan and triggers every 4ms...
+    // Timer 0 controls the display scan. Period=4ms, Freq=250Hz...
     T0CON0 = 0x90;                      // Output scaler 1:1; T0EN enabled; 16-bit;
     T0CON1 = 0x63;                      // HFINTOSC; Non-synchronous; T0CKPS 1:8;
     TMR0H = 0xC1;                       // TMR0H 193; 
     TMR0L = 0x80;                       // TMR0L 128; 
 
-    // Timer 1 controls the display Value increment and triggers every 100ms...
+    // Timer 1 controls the display increment. Period=100ms, Freq=10Hz...
     T1GCON = 0x00;                      // T1GE disabled; T1GTM disabled; T1GPOL low; T1GGO done; T1GSPM disabled; 
     T1GATE = 0x00;                      // GSS T1G_pin; 
     T1CLK = 0x06;                       // CS MFINTOSC_31.25kHz; 
