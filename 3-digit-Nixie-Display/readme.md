@@ -1,13 +1,8 @@
 # 3 Digit Nixie Display #
-
-![alt text](https://github.com/oddwires/RP2040/blob/master/Function%20Generator/Images/work-in-progress.gif)****Work In Progress.****
-![alt text](https://github.com/oddwires/RP2040/blob/master/Function%20Generator/Images/work-in-progress.gif)   
-   
-I am hoping to put together an instructable for this hardware - but its taking a ridiculous amount of time.   
-So in the meantime, here's a video of the code running on the display module.
+I have written an <a href="https://www.instructables.com/SPI-Nixie-Display/" />Instructable</a> detailing the construction of the hardware.
 
 Features...
-  * Nixie = 1N-17
+  * Nixie = IN-17
   * Micro controller = PIC 16F15344
   * 3v/5v SPI interface
   * Internal 170 volt SMPU
