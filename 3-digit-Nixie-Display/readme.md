@@ -1,5 +1,5 @@
 # 3 Digit Nixie Display #
-I have written an <a href="https://www.instructables.com/SPI-Nixie-Display/" target="_blank />Instructable</a> detailing the construction of the hardware.
+I have written an <a href="https://www.instructables.com/SPI-Nixie-Display/" target="_blank" />Instructable</a> detailing the construction of the hardware.
 
 Features...
   * Nixie = IN-17
