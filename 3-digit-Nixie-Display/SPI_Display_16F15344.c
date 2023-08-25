@@ -25,9 +25,9 @@
 // CONFIG2
 #pragma config MCLRE = ON           // Master Clear Enable bit (MCLR pin is Master Clear function)
 #pragma config PWRTE = OFF          // Power-up Timer Enable bit (PWRT enabled)
-#pragma config LPBOREN = OFF        // Low-Power BOR enable bit (ULPBOR disabled)
-#pragma config BOREN = OFF          // Brown-out reset enable bits (Brown-out reset disabled)
-#pragma config BORV = HI            // Brown-out Reset Voltage Selection (Brown-out Reset Voltage (VBOR) is set to 2.7V)
+#pragma config LPBOREN = ON         // Low-Power BOR enable bit (ULPBOR disabled)
+#pragma config BOREN = ON           // Brown-out reset enable bits (Brown-out reset enabled)
+#pragma config BORV = LO            // Brown-out Reset Voltage Selection (Brown-out Reset Voltage (VBOR) is set to 2.7V)
 #pragma config ZCD = OFF            // Zero-cross detect disable (Zero-cross detect circuit is disabled at POR.)
 #pragma config PPS1WAY = ON         // Peripheral Pin Select one-way control (The PPSLOCK bit can be cleared and set only once in software)
 #pragma config STVREN = OFF         // Stack Overflow/Underflow Reset Enable bit (Stack Overflow or Underflow will not cause a reset)
